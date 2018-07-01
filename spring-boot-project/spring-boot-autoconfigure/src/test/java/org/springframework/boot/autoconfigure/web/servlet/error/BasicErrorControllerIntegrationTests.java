@@ -191,18 +191,6 @@ public class BasicErrorControllerIntegrationTests {
 	}
 
 	@Test
-	public void testRequestBodyValidationForText() {
-		load();
-		RequestEntity<Void> request = RequestEntity.post(URI.create(createUrl("/")))
-				.accept(MediaType.TEXT_PLAIN).build();
-		ResponseEntity<String> entity = new TestRestTemplate().exchange(request,
-				String.class);
-		String resp = entity.getBody().toString();
-		assertThat(resp).contains("status");
-		assertThat(resp).contains("error");
-	}
-
-	@Test
 	public void testConventionTemplateMapping() {
 		load();
 		RequestEntity<?> request = RequestEntity.get(URI.create(createUrl("/noStorage")))

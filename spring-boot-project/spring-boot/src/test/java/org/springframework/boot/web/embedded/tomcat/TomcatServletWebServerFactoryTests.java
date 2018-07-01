@@ -18,6 +18,7 @@ package org.springframework.boot.web.embedded.tomcat;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -44,6 +45,7 @@ import org.apache.catalina.core.StandardWrapper;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.util.CharsetMapper;
 import org.apache.catalina.valves.RemoteIpValve;
+import org.apache.catalina.webresources.TomcatURLStreamHandlerFactory;
 import org.apache.jasper.servlet.JspServlet;
 import org.apache.tomcat.JarScanFilter;
 import org.junit.After;
@@ -61,7 +63,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -86,6 +87,9 @@ public class TomcatServletWebServerFactoryTests
 
 	@After
 	public void restoreTccl() {
+		ReflectionTestUtils.setField(TomcatURLStreamHandlerFactory.class, "instance",
+				null);
+		ReflectionTestUtils.setField(URL.class, "factory", null);
 		Thread.currentThread().setContextClassLoader(getClass().getClassLoader());
 	}
 
@@ -176,8 +180,7 @@ public class TomcatServletWebServerFactoryTests
 		TomcatServletWebServerFactory factory = getFactory();
 		Connector[] listeners = new Connector[4];
 		for (int i = 0; i < listeners.length; i++) {
-			Connector connector = mock(Connector.class);
-			given(connector.getState()).willReturn(LifecycleState.STOPPED);
+			Connector connector = new Connector();
 			listeners[i] = connector;
 		}
 		factory.addAdditionalTomcatConnectors(listeners);
@@ -373,7 +376,7 @@ public class TomcatServletWebServerFactoryTests
 	}
 
 	@Test
-	public void defaultLocaleCharsetMappingsAreOverriden() {
+	public void defaultLocaleCharsetMappingsAreOverridden() {
 		TomcatServletWebServerFactory factory = getFactory();
 		this.webServer = factory.getWebServer();
 		// override defaults, see org.apache.catalina.util.CharsetMapperDefault.properties
@@ -415,6 +418,17 @@ public class TomcatServletWebServerFactoryTests
 		assertThat(tldSkipSet).contains("foo.jar", "bar.jar");
 	}
 
+	@Test
+	public void customTomcatHttpOnlyCookie() {
+		TomcatServletWebServerFactory factory = getFactory();
+		factory.getSession().getCookie().setHttpOnly(false);
+		this.webServer = factory.getWebServer();
+		this.webServer.start();
+		Tomcat tomcat = ((TomcatWebServer) this.webServer).getTomcat();
+		Context context = (Context) tomcat.getHost().findChildren()[0];
+		assertThat(context.getUseHttpOnly()).isFalse();
+	}
+
 	@Override
 	protected JspServlet getJspServlet() throws ServletException {
 		Tomcat tomcat = ((TomcatWebServer) this.webServer).getTomcat();
@@ -442,7 +456,7 @@ public class TomcatServletWebServerFactoryTests
 				.getHost().findChildren()[0];
 		CharsetMapper mapper = ((TomcatEmbeddedContext) context).getCharsetMapper();
 		String charsetName = mapper.getCharset(locale);
-		return (charsetName != null) ? Charset.forName(charsetName) : null;
+		return (charsetName != null ? Charset.forName(charsetName) : null);
 	}
 
 	private void assertTimeout(TomcatServletWebServerFactory factory, int expected) {

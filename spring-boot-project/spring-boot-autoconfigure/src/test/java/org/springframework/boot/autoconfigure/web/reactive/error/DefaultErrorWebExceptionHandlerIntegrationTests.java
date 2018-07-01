@@ -269,7 +269,7 @@ public class DefaultErrorWebExceptionHandlerIntegrationTests {
 	}
 
 	@Test
-	public void whilelabelDisabled() {
+	public void whitelabelDisabled() {
 		this.contextRunner.withPropertyValues("server.error.whitelabel.enabled=false",
 				"spring.mustache.prefix=classpath:/unknown/").run((context) -> {
 					WebTestClient client = WebTestClient.bindToApplicationContext(context)
@@ -277,6 +277,16 @@ public class DefaultErrorWebExceptionHandlerIntegrationTests {
 					client.get().uri("/notfound").accept(MediaType.TEXT_HTML).exchange()
 							.expectStatus().isNotFound().expectBody().isEmpty();
 				});
+	}
+
+	@Test
+	public void invalidAcceptMediaType() {
+		this.contextRunner.run((context) -> {
+			WebTestClient client = WebTestClient.bindToApplicationContext(context)
+					.build();
+			client.get().uri("/notfound").header("Accept", "v=3.0").exchange()
+					.expectStatus().isEqualTo(HttpStatus.NOT_FOUND);
+		});
 	}
 
 	@Configuration
@@ -311,6 +321,7 @@ public class DefaultErrorWebExceptionHandlerIntegrationTests {
 			public String bodyValidation(@Valid @RequestBody DummyBody body) {
 				return body.getContent();
 			}
+
 		}
 
 	}

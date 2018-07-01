@@ -83,6 +83,7 @@ import org.springframework.core.env.CompositePropertySource;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.Profiles;
 import org.springframework.core.env.PropertySource;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.ClassPathResource;
@@ -525,7 +526,7 @@ public class SpringApplicationTests {
 		ConfigurableEnvironment environment = new StandardEnvironment();
 		application.setEnvironment(environment);
 		this.context = application.run();
-		assertThat(environment.acceptsProfiles("foo")).isTrue();
+		assertThat(environment.acceptsProfiles(Profiles.of("foo"))).isTrue();
 	}
 
 	@Test
@@ -704,6 +705,32 @@ public class SpringApplicationTests {
 			verify(listener).onApplicationEvent(isA(ApplicationReadyEvent.class));
 			verify(listener, never())
 					.onApplicationEvent(isA(ApplicationFailedEvent.class));
+		}
+	}
+
+	@Test
+	public void failureInReadyEventListenerCloseApplicationContext() {
+		SpringApplication application = new SpringApplication(ExampleConfig.class);
+		application.setWebApplicationType(WebApplicationType.NONE);
+		ExitCodeListener exitCodeListener = new ExitCodeListener();
+		application.addListeners(exitCodeListener);
+		@SuppressWarnings("unchecked")
+		ApplicationListener<SpringApplicationEvent> listener = mock(
+				ApplicationListener.class);
+		application.addListeners(listener);
+		ExitStatusException failure = new ExitStatusException();
+		willThrow(failure).given(listener)
+				.onApplicationEvent(isA(ApplicationReadyEvent.class));
+		try {
+			application.run();
+			fail("Run should have failed with a RuntimeException");
+		}
+		catch (RuntimeException ex) {
+			verify(listener).onApplicationEvent(isA(ApplicationReadyEvent.class));
+			verify(listener, never())
+					.onApplicationEvent(isA(ApplicationFailedEvent.class));
+			assertThat(exitCodeListener.getExitCode()).isEqualTo(11);
+			assertThat(this.output.toString()).contains("Application run failed");
 		}
 	}
 
@@ -1065,7 +1092,7 @@ public class SpringApplicationTests {
 	@Test
 	public void nonWebApplicationConfiguredViaAPropertyHasTheCorrectTypeOfContextAndEnvironment() {
 		ConfigurableApplicationContext context = new SpringApplication(
-				ExampleConfig.class).run("--spring.main.web-application-type=NONE");
+				ExampleConfig.class).run("--spring.main.web-application-type=none");
 		assertThat(context).isNotInstanceOfAny(WebApplicationContext.class,
 				ReactiveWebApplicationContext.class);
 		assertThat(context.getEnvironment())
@@ -1427,14 +1454,14 @@ public class SpringApplicationTests {
 
 	private static class ExitCodeListener implements ApplicationListener<ExitCodeEvent> {
 
-		private int exitCode;
+		private Integer exitCode;
 
 		@Override
 		public void onApplicationEvent(ExitCodeEvent event) {
 			this.exitCode = event.getExitCode();
 		}
 
-		public int getExitCode() {
+		public Integer getExitCode() {
 			return this.exitCode;
 		}
 
@@ -1451,7 +1478,7 @@ public class SpringApplicationTests {
 		@Override
 		public Resource getResource(String path) {
 			Resource resource = this.resources.get(path);
-			return (resource == null ? new ClassPathResource("doesnotexist") : resource);
+			return (resource != null ? resource : new ClassPathResource("doesnotexist"));
 		}
 
 		@Override
