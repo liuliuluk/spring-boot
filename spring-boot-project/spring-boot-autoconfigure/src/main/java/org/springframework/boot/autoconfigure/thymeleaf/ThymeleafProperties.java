@@ -38,6 +38,9 @@ public class ThymeleafProperties {
 
 	private static final Charset DEFAULT_ENCODING = StandardCharsets.UTF_8;
 
+	/**
+	 * 前缀设置，Spring Boot默认模板，放置在classpath:/templates/目录下
+	 */
 	public static final String DEFAULT_PREFIX = "classpath:/templates/";
 
 	public static final String DEFAULT_SUFFIX = ".html";
