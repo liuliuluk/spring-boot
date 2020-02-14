@@ -55,6 +55,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.format.support.FormattingConversionService;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -62,8 +63,11 @@ import org.springframework.util.StringUtils;
 import org.springframework.validation.Validator;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 import org.springframework.web.accept.ContentNegotiationManager;
+import org.springframework.web.accept.ContentNegotiationStrategy;
 import org.springframework.web.accept.ParameterContentNegotiationStrategy;
+import org.springframework.web.accept.PathExtensionContentNegotiationStrategy;
 import org.springframework.web.bind.support.ConfigurableWebBindingInitializer;
+import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.filter.HttpPutFormContentFilter;
 import org.springframework.web.servlet.HandlerAdapter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
@@ -86,8 +90,8 @@ import org.springframework.web.servlet.resource.CachingResourceResolver;
 import org.springframework.web.servlet.resource.CachingResourceTransformer;
 import org.springframework.web.servlet.resource.ContentVersionStrategy;
 import org.springframework.web.servlet.resource.CssLinkResourceTransformer;
+import org.springframework.web.servlet.resource.EncodedResourceResolver;
 import org.springframework.web.servlet.resource.FixedVersionStrategy;
-import org.springframework.web.servlet.resource.GzipResourceResolver;
 import org.springframework.web.servlet.resource.PathResourceResolver;
 import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
 import org.springframework.web.servlet.resource.ResourceResolver;
@@ -272,21 +276,21 @@ public class WebMvcAutoConfigurationTests {
 				"spring.resources.chain.strategy.fixed.version:test",
 				"spring.resources.chain.strategy.fixed.paths:/**/*.js",
 				"spring.resources.chain.html-application-cache:true",
-				"spring.resources.chain.gzipped:true").run((context) -> {
+				"spring.resources.chain.compressed:true").run((context) -> {
 					assertThat(getResourceResolvers(context, "/webjars/**")).hasSize(3);
 					assertThat(getResourceTransformers(context, "/webjars/**"))
 							.hasSize(2);
 					assertThat(getResourceResolvers(context, "/**"))
 							.extractingResultOf("getClass")
-							.containsOnly(VersionResourceResolver.class,
-									GzipResourceResolver.class,
+							.containsOnly(EncodedResourceResolver.class,
+									VersionResourceResolver.class,
 									PathResourceResolver.class);
 					assertThat(getResourceTransformers(context, "/**"))
 							.extractingResultOf("getClass")
 							.containsOnly(CssLinkResourceTransformer.class,
 									AppCacheManifestTransformer.class);
 					VersionResourceResolver resolver = (VersionResourceResolver) getResourceResolvers(
-							context, "/**").get(0);
+							context, "/**").get(1);
 					Map<String, VersionStrategy> strategyMap = resolver.getStrategyMap();
 					assertThat(strategyMap.get("/*.png"))
 							.isInstanceOf(ContentVersionStrategy.class);
@@ -816,10 +820,24 @@ public class WebMvcAutoConfigurationTests {
 				.run((context) -> {
 					ContentNegotiationManager manager = context
 							.getBean(ContentNegotiationManager.class);
-					assertThat(manager.getStrategies()).anyMatch(
-							strategy -> WebMvcAutoConfiguration.OptionalPathExtensionContentNegotiationStrategy.class
+					assertThat(manager.getStrategies()).anyMatch((
+							strategy) -> WebMvcAutoConfiguration.OptionalPathExtensionContentNegotiationStrategy.class
 									.isAssignableFrom(strategy.getClass()));
 				});
+	}
+
+	@Test
+	public void contentNegotiationStrategySkipsPathExtension() throws Exception {
+		ContentNegotiationStrategy delegate = mock(ContentNegotiationStrategy.class);
+		ContentNegotiationStrategy strategy = new WebMvcAutoConfiguration.OptionalPathExtensionContentNegotiationStrategy(
+				delegate);
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setAttribute(
+				PathExtensionContentNegotiationStrategy.class.getName() + ".SKIP",
+				Boolean.TRUE);
+		ServletWebRequest webRequest = new ServletWebRequest(request);
+		List<MediaType> mediaTypes = strategy.resolveMediaTypes(webRequest);
+		assertThat(mediaTypes).containsOnly(MediaType.ALL);
 	}
 
 	private void assertCacheControl(AssertableWebApplicationContext context) {

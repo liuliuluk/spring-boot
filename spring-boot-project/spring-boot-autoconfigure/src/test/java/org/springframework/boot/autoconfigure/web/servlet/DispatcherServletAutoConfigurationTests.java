@@ -35,6 +35,7 @@ import org.springframework.web.multipart.MultipartResolver;
 import org.springframework.web.servlet.DispatcherServlet;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 /**
  * Tests for {@link DispatcherServletAutoConfiguration}.
@@ -55,7 +56,7 @@ public class DispatcherServletAutoConfigurationTests {
 			assertThat(context.getBean(DispatcherServlet.class)).isNotNull();
 			ServletRegistrationBean<?> registration = context
 					.getBean(ServletRegistrationBean.class);
-			assertThat(registration.getUrlMappings().toString()).isEqualTo("[/]");
+			assertThat(registration.getUrlMappings()).containsExactly("/");
 		});
 	}
 
@@ -65,6 +66,8 @@ public class DispatcherServletAutoConfigurationTests {
 				.run((context) -> {
 					assertThat(context).doesNotHaveBean(ServletRegistrationBean.class);
 					assertThat(context).doesNotHaveBean(DispatcherServlet.class);
+					assertThat(context)
+							.doesNotHaveBean(DispatcherServletPathProvider.class);
 				});
 	}
 
@@ -72,11 +75,13 @@ public class DispatcherServletAutoConfigurationTests {
 	// from the default one, we're registering one anyway
 	@Test
 	public void registrationOverrideWithDispatcherServletWrongName() {
-		this.contextRunner.withUserConfiguration(CustomDispatcherServletWrongName.class)
+		this.contextRunner
+				.withUserConfiguration(CustomDispatcherServletDifferentName.class,
+						CustomDispatcherServletPathProvider.class)
 				.run((context) -> {
 					ServletRegistrationBean<?> registration = context
 							.getBean(ServletRegistrationBean.class);
-					assertThat(registration.getUrlMappings().toString()).isEqualTo("[/]");
+					assertThat(registration.getUrlMappings()).containsExactly("/");
 					assertThat(registration.getServletName())
 							.isEqualTo("dispatcherServlet");
 					assertThat(context).getBeanNames(DispatcherServlet.class).hasSize(2);
@@ -85,12 +90,11 @@ public class DispatcherServletAutoConfigurationTests {
 
 	@Test
 	public void registrationOverrideWithAutowiredServlet() {
-		this.contextRunner.withUserConfiguration(CustomAutowiredRegistration.class)
-				.run((context) -> {
+		this.contextRunner.withUserConfiguration(CustomAutowiredRegistration.class,
+				CustomDispatcherServletPathProvider.class).run((context) -> {
 					ServletRegistrationBean<?> registration = context
 							.getBean(ServletRegistrationBean.class);
-					assertThat(registration.getUrlMappings().toString())
-							.isEqualTo("[/foo]");
+					assertThat(registration.getUrlMappings()).containsExactly("/foo");
 					assertThat(registration.getServletName())
 							.isEqualTo("customDispatcher");
 					assertThat(context).hasSingleBean(DispatcherServlet.class);
@@ -99,15 +103,51 @@ public class DispatcherServletAutoConfigurationTests {
 
 	@Test
 	public void servletPath() {
-		this.contextRunner.withPropertyValues("server.servlet.path:/spring")
+		this.contextRunner.withPropertyValues("spring.mvc.servlet.path:/spring")
 				.run((context) -> {
 					assertThat(context.getBean(DispatcherServlet.class)).isNotNull();
 					ServletRegistrationBean<?> registration = context
 							.getBean(ServletRegistrationBean.class);
-					assertThat(registration.getUrlMappings().toString())
-							.isEqualTo("[/spring/*]");
+					assertThat(registration.getUrlMappings())
+							.containsExactly("/spring/*");
 					assertThat(registration.getMultipartConfig()).isNull();
+					assertThat(context.getBean(DispatcherServletPathProvider.class)
+							.getServletPaths()).containsExactly("/spring");
 				});
+	}
+
+	@Test
+	public void pathProviderNotCreatedWhenMultipleDispatcherServletsPresent() {
+		this.contextRunner
+				.withUserConfiguration(CustomDispatcherServletDifferentName.class)
+				.run((context) -> assertThat(context)
+						.doesNotHaveBean(DispatcherServletPathProvider.class));
+	}
+
+	@Test
+	public void pathProviderWhenCustomDispatcherServletSameNameShouldReturnConfiguredServletPath() {
+		this.contextRunner.withUserConfiguration(CustomDispatcherServletSameName.class)
+				.withPropertyValues("spring.mvc.servlet.path:/spring")
+				.run((context) -> assertThat(context
+						.getBean(DispatcherServletPathProvider.class).getServletPaths())
+								.containsExactly("/spring"));
+	}
+
+	@Test
+	public void pathProviderNotCreatedWhenDefaultDispatcherServletNotAvailable() {
+		this.contextRunner
+				.withUserConfiguration(CustomDispatcherServletDifferentName.class,
+						NonServletConfiguration.class)
+				.run((context) -> assertThat(context)
+						.doesNotHaveBean(DispatcherServletPathProvider.class));
+	}
+
+	@Test
+	public void pathProviderNotCreatedWhenCustomRegistrationBeanPresent() {
+		this.contextRunner
+				.withUserConfiguration(CustomDispatcherServletRegistration.class)
+				.run((context) -> assertThat(context)
+						.doesNotHaveBean(DispatcherServletPathProvider.class));
 	}
 
 	@Test
@@ -187,11 +227,21 @@ public class DispatcherServletAutoConfigurationTests {
 	}
 
 	@Configuration
-	protected static class CustomDispatcherServletWrongName {
+	protected static class CustomDispatcherServletDifferentName {
 
 		@Bean
 		public DispatcherServlet customDispatcherServlet() {
 			return new DispatcherServlet();
+		}
+
+	}
+
+	@Configuration
+	protected static class CustomDispatcherServletPathProvider {
+
+		@Bean
+		public DispatcherServletPathProvider dispatcherServletPathProvider() {
+			return mock(DispatcherServletPathProvider.class);
 		}
 
 	}
@@ -206,6 +256,11 @@ public class DispatcherServletAutoConfigurationTests {
 					dispatcherServlet, "/foo");
 			registration.setName("customDispatcher");
 			return registration;
+		}
+
+		@Bean
+		public DispatcherServletPathProvider dispatcherServletPathProvider() {
+			return mock(DispatcherServletPathProvider.class);
 		}
 
 	}
@@ -226,6 +281,30 @@ public class DispatcherServletAutoConfigurationTests {
 		@Bean
 		public MultipartResolver getMultipartResolver() {
 			return new MockMultipartResolver();
+		}
+
+	}
+
+	@Configuration
+	protected static class CustomDispatcherServletSameName {
+
+		@Bean(name = DispatcherServletAutoConfiguration.DEFAULT_DISPATCHER_SERVLET_BEAN_NAME)
+		public DispatcherServlet dispatcherServlet() {
+			return new DispatcherServlet();
+		}
+
+	}
+
+	@Configuration
+	protected static class CustomDispatcherServletRegistration {
+
+		@Bean(name = DispatcherServletAutoConfiguration.DEFAULT_DISPATCHER_SERVLET_REGISTRATION_BEAN_NAME)
+		public ServletRegistrationBean<DispatcherServlet> dispatcherServletRegistration(
+				DispatcherServlet dispatcherServlet) {
+			ServletRegistrationBean<DispatcherServlet> registration = new ServletRegistrationBean<>(
+					dispatcherServlet, "/foo");
+			registration.setName("customDispatcher");
+			return registration;
 		}
 
 	}

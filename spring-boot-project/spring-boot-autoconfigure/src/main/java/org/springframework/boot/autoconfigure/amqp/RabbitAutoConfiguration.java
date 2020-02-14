@@ -40,9 +40,6 @@ import org.springframework.boot.context.properties.PropertyMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.retry.backoff.ExponentialBackOffPolicy;
-import org.springframework.retry.policy.SimpleRetryPolicy;
-import org.springframework.retry.support.RetryTemplate;
 
 /**
  * {@link EnableAutoConfiguration Auto-configuration} for {@link RabbitTemplate}.
@@ -167,7 +164,7 @@ public class RabbitAutoConfiguration {
 
 		@Bean
 		@ConditionalOnSingleCandidate(ConnectionFactory.class)
-		@ConditionalOnMissingBean(RabbitTemplate.class)
+		@ConditionalOnMissingBean
 		public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory) {
 			PropertyMapper map = PropertyMapper.get();
 			RabbitTemplate template = new RabbitTemplate(connectionFactory);
@@ -178,7 +175,8 @@ public class RabbitAutoConfiguration {
 			template.setMandatory(determineMandatoryFlag());
 			RabbitProperties.Template properties = this.properties.getTemplate();
 			if (properties.getRetry().isEnabled()) {
-				template.setRetryTemplate(createRetryTemplate(properties.getRetry()));
+				template.setRetryTemplate(new RetryTemplateFactory()
+						.createRetryTemplate(properties.getRetry()));
 			}
 			map.from(properties::getReceiveTimeout).whenNonNull().as(Duration::toMillis)
 					.to(template::setReceiveTimeout);
@@ -194,26 +192,10 @@ public class RabbitAutoConfiguration {
 			return (mandatory != null ? mandatory : this.properties.isPublisherReturns());
 		}
 
-		private RetryTemplate createRetryTemplate(RabbitProperties.Retry properties) {
-			PropertyMapper map = PropertyMapper.get();
-			RetryTemplate template = new RetryTemplate();
-			SimpleRetryPolicy policy = new SimpleRetryPolicy();
-			map.from(properties::getMaxAttempts).to(policy::setMaxAttempts);
-			template.setRetryPolicy(policy);
-			ExponentialBackOffPolicy backOffPolicy = new ExponentialBackOffPolicy();
-			map.from(properties::getInitialInterval).whenNonNull().as(Duration::toMillis)
-					.to(backOffPolicy::setInitialInterval);
-			map.from(properties::getMultiplier).to(backOffPolicy::setMultiplier);
-			map.from(properties::getMaxInterval).whenNonNull().as(Duration::toMillis)
-					.to(backOffPolicy::setMaxInterval);
-			template.setBackOffPolicy(backOffPolicy);
-			return template;
-		}
-
 		@Bean
 		@ConditionalOnSingleCandidate(ConnectionFactory.class)
 		@ConditionalOnProperty(prefix = "spring.rabbitmq", name = "dynamic", matchIfMissing = true)
-		@ConditionalOnMissingBean(AmqpAdmin.class)
+		@ConditionalOnMissingBean
 		public AmqpAdmin amqpAdmin(ConnectionFactory connectionFactory) {
 			return new RabbitAdmin(connectionFactory);
 		}

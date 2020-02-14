@@ -17,17 +17,24 @@
 package org.springframework.boot.actuate.autoconfigure.endpoint.web;
 
 import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
+import org.glassfish.jersey.server.ResourceConfig;
 import org.junit.Test;
 
 import org.springframework.boot.actuate.endpoint.web.ServletEndpointRegistrar;
 import org.springframework.boot.actuate.endpoint.web.annotation.ServletEndpointsSupplier;
+import org.springframework.boot.autoconfigure.web.servlet.DispatcherServletPathProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.servlet.DispatcherServlet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,6 +42,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Tests for {@link ServletEndpointManagementContextConfiguration}.
  *
  * @author Phillip Webb
+ * @author Madhura Bhave
  */
 public class ServletEndpointManagementContextConfigurationTests {
 
@@ -42,9 +50,33 @@ public class ServletEndpointManagementContextConfigurationTests {
 			.withUserConfiguration(TestConfig.class);
 
 	@Test
+	@SuppressWarnings("unchecked")
 	public void contextShouldContainServletEndpointRegistrar() {
-		this.contextRunner.run((context) -> assertThat(context)
-				.hasSingleBean(ServletEndpointRegistrar.class));
+		FilteredClassLoader classLoader = new FilteredClassLoader(ResourceConfig.class);
+		this.contextRunner.withClassLoader(classLoader).run((context) -> {
+			assertThat(context).hasSingleBean(ServletEndpointRegistrar.class);
+			ServletEndpointRegistrar bean = context
+					.getBean(ServletEndpointRegistrar.class);
+			Set<String> basePaths = (Set<String>) ReflectionTestUtils.getField(bean,
+					"basePaths");
+			assertThat(basePaths).containsExactlyInAnyOrder("/test/actuator", "/actuator",
+					"/foo/actuator");
+		});
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	public void servletPathShouldNotAffectJerseyConfiguration() {
+		FilteredClassLoader classLoader = new FilteredClassLoader(
+				DispatcherServlet.class);
+		this.contextRunner.withClassLoader(classLoader).run((context) -> {
+			assertThat(context).hasSingleBean(ServletEndpointRegistrar.class);
+			ServletEndpointRegistrar bean = context
+					.getBean(ServletEndpointRegistrar.class);
+			Set<String> basePaths = (Set<String>) ReflectionTestUtils.getField(bean,
+					"basePaths");
+			assertThat(basePaths).containsExactly("/actuator");
+		});
 	}
 
 	@Test
@@ -62,6 +94,17 @@ public class ServletEndpointManagementContextConfigurationTests {
 		@Bean
 		public ServletEndpointsSupplier servletEndpointsSupplier() {
 			return () -> Collections.emptyList();
+		}
+
+		@Bean
+		public DispatcherServletPathProvider servletPathProvider() {
+			return () -> {
+				Set<String> paths = new LinkedHashSet<>();
+				paths.add("/");
+				paths.add("/test");
+				paths.add("/foo/");
+				return paths;
+			};
 		}
 
 	}
